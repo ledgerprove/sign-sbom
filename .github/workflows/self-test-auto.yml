@@ -1,0 +1,18 @@
+name: Self-test (auto-SBOM)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  auto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign with auto-generated SBOM
+        id: lp
+        uses: ./
+        with:
+          api-key: ${{ secrets.LEDGERPROVE_API_KEY }}
+          repo-id: rajibcse94/sign-sbom-auto-test
+      - run: echo "Verify → ${{ steps.lp.outputs.verification-url }}"
