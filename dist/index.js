@@ -25699,6 +25699,7 @@ const crypto = __importStar(__nccwpck_require__(6982));
 const https = __importStar(__nccwpck_require__(5692));
 const http = __importStar(__nccwpck_require__(8611));
 const url_1 = __nccwpck_require__(7016);
+const child_process_1 = __nccwpck_require__(5317);
 function detectSbomFormat(json) {
     const o = json;
     if (typeof o.bomFormat === 'string' && o.bomFormat.toLowerCase() === 'cyclonedx')
@@ -25717,6 +25718,39 @@ function countPackages(json) {
     if (Array.isArray(o.packages))
         return o.packages.length;
     return 0;
+}
+// If the user didn't provide an SBOM file, install Syft and generate one.
+// Syft is the de-facto standard SBOM generator and works for npm, PyPI, Go,
+// Maven, RubyGems, crates, and most other ecosystems out of the box.
+function ensureSbomFile(provided) {
+    if (provided) {
+        if (!fs.existsSync(provided)) {
+            throw new Error(`SBOM file not found: ${provided}`);
+        }
+        return provided;
+    }
+    if (process.platform !== 'linux') {
+        throw new Error('Auto-SBOM generation only supports Linux runners (ubuntu-latest). ' +
+            'On other runners, generate the SBOM yourself in a previous step and pass `sbom-file:` explicitly.');
+    }
+    const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
+    const syftDir = '/tmp/lp-syft';
+    const syftBin = `${syftDir}/syft`;
+    const outputFile = '/tmp/lp-auto-sbom.cyclonedx.json';
+    if (!fs.existsSync(syftBin)) {
+        core.info('Installing Syft (one-time, ~5s)…');
+        fs.mkdirSync(syftDir, { recursive: true });
+        const install = (0, child_process_1.spawnSync)('sh', ['-c', `curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b ${syftDir}`], { stdio: 'inherit' });
+        if (install.status !== 0)
+            throw new Error('Failed to install Syft');
+    }
+    core.info(`Generating CycloneDX SBOM from ${workspace}…`);
+    const gen = (0, child_process_1.spawnSync)(syftBin, [`dir:${workspace}`, '-o', `cyclonedx-json=${outputFile}`, '-q'], { stdio: 'inherit' });
+    if (gen.status !== 0)
+        throw new Error('Failed to generate SBOM with Syft');
+    if (!fs.existsSync(outputFile))
+        throw new Error(`Syft did not write the expected file: ${outputFile}`);
+    return outputFile;
 }
 function postJson(urlStr, headers, body) {
     return new Promise((resolve, reject) => {
@@ -25751,7 +25785,8 @@ async function run() {
     try {
         // ---- Read inputs ----
         const apiKey = core.getInput('api-key', { required: true });
-        const sbomFile = core.getInput('sbom-file', { required: true });
+        // sbom-file is now optional — auto-generate if missing
+        const providedSbomFile = core.getInput('sbom-file');
         const repoId = core.getInput('repo-id') || process.env.GITHUB_REPOSITORY || '';
         const commitHash = core.getInput('commit-hash') || process.env.GITHUB_SHA || '';
         const buildStatus = (core.getInput('build-status') || 'PASS').toUpperCase();
@@ -25761,8 +25796,8 @@ async function run() {
             throw new Error('repo-id not provided and GITHUB_REPOSITORY is empty');
         if (!commitHash)
             throw new Error('commit-hash not provided and GITHUB_SHA is empty');
-        if (!fs.existsSync(sbomFile))
-            throw new Error(`SBOM file not found: ${sbomFile}`);
+        // ---- Resolve the SBOM file (auto-generate via Syft if not provided) ----
+        const sbomFile = ensureSbomFile(providedSbomFile);
         // ---- Read and hash the SBOM ----
         const sbomBytes = fs.readFileSync(sbomFile);
         const sbomHash = 'sha256:' + crypto.createHash('sha256').update(sbomBytes).digest('hex');

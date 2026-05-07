@@ -10,8 +10,9 @@ inputs:
     description: 'Your LedgerProve API key (lp_live_…). Generate at https://ledgerprove.com/dashboard. Store as a repo or org secret.'
     required: true
   sbom-file:
-    description: 'Path to your SBOM file (CycloneDX or SPDX JSON). Generate it in an earlier step with syft, cyclonedx, or your tool of choice.'
-    required: true
+    description: 'Path to your SBOM file (CycloneDX or SPDX JSON). Leave empty to auto-generate one with Syft on the runner. Linux runners only for auto-generation.'
+    required: false
+    default: ''
   repo-id:
     description: 'Repository identifier under which to record this build. Defaults to GITHUB_REPOSITORY (e.g. acme/api).'
     required: false

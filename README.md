@@ -2,12 +2,27 @@
 
 Cryptographically sign your SBOM, append it to a tamper-evident hash chain, and get a public verification URL — all in one CI step.
 
+## Quick start (auto-generates the SBOM for you)
+
 ```yaml
 - name: Sign SBOM with LedgerProve
   uses: ledgerprove/sign-sbom@v1
   with:
     api-key: ${{ secrets.LEDGERPROVE_API_KEY }}
-    sbom-file: ./sbom.json
+```
+
+That's the whole workflow step. The Action installs Syft, generates a CycloneDX SBOM of your repo, signs it with ECDSA-P521 (private key in AWS KMS), and prints a public verify URL.
+
+## Bring-your-own SBOM (full control)
+
+If you already generate an SBOM in a previous step (cyclonedx-cli, custom tooling, etc.), pass it explicitly:
+
+```yaml
+- name: Sign SBOM with LedgerProve
+  uses: ledgerprove/sign-sbom@v1
+  with:
+    api-key: ${{ secrets.LEDGERPROVE_API_KEY }}
+    sbom-file: ./my-sbom.json
 ```
 
 ## What it does
