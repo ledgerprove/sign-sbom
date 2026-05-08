@@ -1,5 +1,9 @@
 # LedgerProve — sign-sbom GitHub Action
 
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-LedgerProve-blue?logo=github)](https://github.com/marketplace/actions/ledgerprove-sign-sbom)
+[![Release](https://img.shields.io/github/v/release/ledgerprove/sign-sbom?display_name=tag&sort=semver)](https://github.com/ledgerprove/sign-sbom/releases)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Cryptographically sign your SBOM, append it to a tamper-evident hash chain, and get a public verification URL — all in one CI step.
 
 ## Quick start (auto-generates the SBOM for you)
