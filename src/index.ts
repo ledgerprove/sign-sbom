@@ -72,14 +72,23 @@ function ensureSbomFile(provided: string): string {
   const outputFile = '/tmp/lp-auto-sbom.cyclonedx.json';
 
   if (!fs.existsSync(syftBin)) {
-    core.info('Installing Syft (one-time, ~5s)…');
+    // Pin the Syft version we install. NEVER `curl … main | sh` — that pulls
+    // whatever HEAD is at install time, with no checksum, which is a supply
+    // chain risk (Anchore's repo could be tampered with, the install script
+    // could be changed mid-CI). Pinning to a tagged release file means:
+    //   - Reproducible builds: same Syft binary every run
+    //   - Anchore-signed release artifacts checked at the pinned URL
+    //   - Easy upgrade via a single bump in this file
+    const SYFT_VERSION = 'v1.18.1';
+    core.info(`Installing Syft ${SYFT_VERSION} (one-time, ~5s)…`);
     fs.mkdirSync(syftDir, { recursive: true });
+    const installScriptUrl = `https://raw.githubusercontent.com/anchore/syft/${SYFT_VERSION}/install.sh`;
     const install = spawnSync(
       'sh',
-      ['-c', `curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b ${syftDir}`],
+      ['-c', `curl -sSfL --retry 3 --retry-delay 2 ${installScriptUrl} | sh -s -- -b ${syftDir} ${SYFT_VERSION}`],
       { stdio: 'inherit' },
     );
-    if (install.status !== 0) throw new Error('Failed to install Syft');
+    if (install.status !== 0) throw new Error(`Failed to install Syft ${SYFT_VERSION}`);
   }
 
   core.info(`Generating CycloneDX SBOM from ${workspace}…`);
@@ -124,12 +133,19 @@ async function run(): Promise<void> {
   try {
     // ---- Read inputs ----
     const apiKey = core.getInput('api-key', { required: true });
+    // Mask the key in EVERY downstream log line — including stack traces from
+    // unrelated failures (Syft install, fs read, JSON parse). Must happen
+    // BEFORE any other operation that might throw.
+    core.setSecret(apiKey);
     // sbom-file is now optional — auto-generate if missing
     const providedSbomFile = core.getInput('sbom-file');
     const repoId = core.getInput('repo-id') || process.env.GITHUB_REPOSITORY || '';
     const commitHash = core.getInput('commit-hash') || process.env.GITHUB_SHA || '';
     const buildStatus = (core.getInput('build-status') || 'PASS').toUpperCase();
-    const cveCount = parseInt(core.getInput('cve-count') || '0', 10);
+    // Coerce safely: parseInt on garbage returns NaN which JSON-serializes
+    // to null, confusing the API. Default to 0 on any non-numeric input.
+    const cveRaw = parseInt(core.getInput('cve-count') || '0', 10);
+    const cveCount = Number.isFinite(cveRaw) && cveRaw >= 0 ? cveRaw : 0;
     const apiUrl = (core.getInput('api-url') || 'https://api.ledgerprove.com').replace(/\/$/, '');
 
     if (!repoId) throw new Error('repo-id not provided and GITHUB_REPOSITORY is empty');
@@ -225,6 +241,14 @@ async function run(): Promise<void> {
       .write();
   } catch (err) {
     const msg = (err as Error).message;
+    // Emit empty outputs so downstream `if: always()` steps that read them
+    // get explicit empty strings rather than undefined.
+    core.setOutput('verification-id', '');
+    core.setOutput('verification-url', '');
+    core.setOutput('signature-algorithm', '');
+    core.setOutput('chain-index', '');
+    core.setOutput('record-hash', '');
+    core.setOutput('timestamped', 'false');
     core.setFailed(msg);
   }
 }
